@@ -15,20 +15,39 @@ pub fn run() {
         .collect();
 
     part1(&mut writer, &banks);
+    part2(&mut writer, &banks);
 }
 
 fn part1<W: Write>(writer: &mut BufWriter<W>, banks: &Vec<Vec<u32>>) {
+    let total = max_for_length(banks, 2);
+    printwriteln!(writer, "{}", total).unwrap();
+}
+
+fn max_for_length(banks: &Vec<Vec<u32>>, length: usize) -> u64 {
     let mut total = 0;
     for bank in banks {
-        let first = bank[..(bank.len() - 1)].iter().max().unwrap();
-        let first_index = bank.iter().position(|p| p == first).unwrap();
-        let second = bank[(first_index + 1)..].iter().max().unwrap();
-        let num = first * 10 + second;
+        let mut num = "".to_string();
+        let mut start_index = 0;
+        for i in 0..length {
+            let end_index = bank.len() - length + 1 + i;
+            let digit = bank[start_index..end_index].iter().max().unwrap();
+            let digit_index = bank[start_index..end_index]
+                .iter()
+                .position(|p| p == digit)
+                .unwrap()
+                + start_index;
+            start_index = digit_index + 1;
+            num = num + &format!("{}", digit);
+        }
 
         println!("{}", num);
 
-        total += num;
+        total += num.parse::<u64>().unwrap();
     }
+    total
+}
 
+fn part2<W: Write>(writer: &mut BufWriter<W>, banks: &Vec<Vec<u32>>) {
+    let total = max_for_length(banks, 12);
     printwriteln!(writer, "{}", total).unwrap();
 }
