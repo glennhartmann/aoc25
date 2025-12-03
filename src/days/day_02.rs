@@ -1,4 +1,7 @@
-use std::io::{BufWriter, Write};
+use std::{
+    collections::HashSet,
+    io::{BufWriter, Write},
+};
 
 use aoclib_rs::{prep_io, printwriteln};
 
@@ -19,27 +22,19 @@ pub fn run() {
     println!("{:?}", ranges);
 
     part1(&mut writer, &ranges);
+    part2(&mut writer, &ranges);
 }
 
 fn part1<W: Write>(writer: &mut BufWriter<W>, ranges: &Vec<(String, String)>) {
+    let mut seen: HashSet<String> = HashSet::new();
     let mut total: i64 = 0;
     for range in ranges {
         let starti = range.0.parse().unwrap();
         let endi = range.1.parse().unwrap();
         let mut current = range.0.clone();
         while leq(&current, endi) {
-            if current.len() % 2 != 0 {
-                current = next_order_of_magnitude(&current);
-            }
-
-            let half = &current[..(current.len() / 2)];
-            let rep = half.to_string() + half;
-            if geq(&rep, starti) && leq(&rep, endi) {
-                println!("{}", &rep);
-                total += rep.parse::<i64>().unwrap();
-            }
-            let next_half = increment(half);
-            current = next_half.clone() + &next_half;
+            total += generate_patterns(2, &current, starti, endi, &mut seen);
+            current = increment(&current);
         }
     }
 
@@ -58,8 +53,44 @@ fn geq(start: &str, starti: i64) -> bool {
     start.parse::<i64>().unwrap() >= starti
 }
 
-fn next_order_of_magnitude(s: &str) -> String {
-    let mut next = vec!['0'; s.len() + 1];
-    next[0] = '1';
-    next.into_iter().collect()
+fn part2<W: Write>(writer: &mut BufWriter<W>, ranges: &Vec<(String, String)>) {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut total: i64 = 0;
+    for range in ranges {
+        let starti = range.0.parse().unwrap();
+        let endi = range.1.parse().unwrap();
+        let mut current = range.0.clone();
+        while leq(&current, endi) {
+            for p in 2..=current.len() {
+                total += generate_patterns(p, &current, starti, endi, &mut seen);
+            }
+            current = increment(&current);
+        }
+    }
+
+    printwriteln!(writer, "{}", total).unwrap();
+}
+
+fn generate_patterns(
+    divisor: usize,
+    current: &str,
+    starti: i64,
+    endi: i64,
+    seen: &mut HashSet<String>,
+) -> i64 {
+    if current.len() % divisor != 0 {
+        return 0;
+    }
+    let part = current[..(current.len() / divisor)].to_string();
+    let mut rep = part.clone();
+    for _ in 0..(divisor - 1) {
+        rep = rep + &part;
+    }
+    let mut total = 0;
+    if geq(&rep, starti) && leq(&rep, endi) && !seen.contains(&rep) {
+        println!("{}", &rep);
+        total += rep.parse::<i64>().unwrap();
+        seen.insert(rep);
+    }
+    total
 }
