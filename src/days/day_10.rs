@@ -1,12 +1,12 @@
-use std::{
-    cmp::Ordering,
-    fmt,
-    fmt::Formatter,
-    io::{BufWriter, Write},
-    ops::{Deref, DerefMut, Index, IndexMut, Mul, MulAssign},
-};
+use std::io::{BufWriter, Write};
 
-use aoclib_rs::{option_min_max::OptionMinMax, prep_io, printwriteln};
+use aoclib_rs::{
+    fold_while,
+    iter::selector_iter,
+    matrix::{Matrix, RowVec},
+    option_min_max::OptionMinMax,
+    prep_io, printwriteln,
+};
 
 use num_rational::Rational64 as R64;
 
@@ -41,20 +41,15 @@ impl Machine {
     }
 
     fn min_button_presses(&mut self) -> i64 {
-        let mut presses: Presses = vec![false; self.buttons.len()];
-        let mut min = OptionMinMax(None);
-        loop {
+        let mut min = OptionMinMax::NONE;
+        for presses in selector_iter(self.buttons.len()) {
             let num_presses = self.press_buttons(&presses);
             if self.goal_achieved() {
                 min = min.min(num_presses);
             }
             self.reset();
-
-            if increment_presses(&mut presses) {
-                break;
-            }
         }
-        min.0.unwrap()
+        min.unwrap()
     }
 
     fn press_buttons(&mut self, presses: &Presses) -> i64 {
@@ -165,319 +160,6 @@ fn part1<W: Write>(writer: &mut BufWriter<W>, machines: Vec<Machine>) {
     printwriteln!(writer, "{}", total).unwrap();
 }
 
-// TODO make an iterator for this in aoclib-rs
-fn increment_presses(presses: &mut Presses) -> bool {
-    let mut last = presses.len() - 1;
-    loop {
-        presses[last] = !presses[last];
-
-        if presses[last] {
-            break;
-        }
-
-        match last.checked_sub(1) {
-            None => return true,
-            Some(l) => last = l,
-        }
-    }
-    false
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct RowVec(Vec<R64>);
-
-impl RowVec {
-    fn zeros(len: usize) -> Self {
-        Self(vec![R64::ZERO; len])
-    }
-
-    fn add_assign(&mut self, rhs: &Self) -> anyhow::Result<()> {
-        if self.0.len() != rhs.0.len() {
-            anyhow::bail!(
-                "addition of RowVecs of different sizes: {} vs {}",
-                self.0.len(),
-                rhs.0.len()
-            );
-        }
-
-        self.0
-            .iter_mut()
-            .enumerate()
-            .for_each(|(i, e)| *e += rhs.0[i]);
-
-        Ok(())
-    }
-
-    fn normalize(&mut self) {
-        let Some(leader_col) = self.leader_col() else {
-            return;
-        };
-
-        if self.0[leader_col] != R64::ONE {
-            let factor = self.0[leader_col].recip();
-            *self *= factor;
-        }
-    }
-
-    fn is_zeros(&self) -> bool {
-        fold_while(self.0.iter(), true, |_, v| {
-            let r = *v == R64::ZERO;
-            (r, r)
-        })
-    }
-
-    fn leader_col(&self) -> Option<usize> {
-        self.0.iter().position(|&e| e != R64::ZERO)
-    }
-}
-
-impl Deref for RowVec {
-    type Target = Vec<R64>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for RowVec {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl MulAssign<R64> for RowVec {
-    fn mul_assign(&mut self, rhs: R64) {
-        for cell in &mut self.0 {
-            *cell *= rhs;
-        }
-    }
-}
-
-impl Mul<R64> for RowVec {
-    type Output = RowVec;
-
-    fn mul(mut self, rhs: R64) -> Self::Output {
-        self *= rhs;
-        self
-    }
-}
-
-impl fmt::Display for RowVec {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "[ ")?;
-        for v in &self.0 {
-            write!(f, "{} ", *v)?;
-        }
-        write!(f, "]")?;
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct Matrix(Vec<RowVec>);
-
-impl Matrix {
-    fn new(m: Vec<Vec<R64>>) -> Self {
-        Self(m.into_iter().map(RowVec).collect())
-    }
-
-    fn zeros(rows: usize, cols: usize) -> Self {
-        if rows == 0 || cols == 0 {
-            Self(Vec::new())
-        } else {
-            Self(vec![RowVec::zeros(cols); rows])
-        }
-    }
-
-    fn rref(&mut self) {
-        self.r#ref();
-        for row in 0..self.0.len() {
-            self.eliminate_above_leader(row);
-        }
-        self.leader_sort();
-        self.normalize();
-    }
-
-    fn r#ref(&mut self) {
-        self.leader_sort();
-        for row in 0..self.0.len() {
-            self.eliminate_below_leader(row);
-        }
-        self.leader_sort();
-    }
-
-    fn leader_sort(&mut self) {
-        self.0.sort_by(|a, b| {
-            for (i, ai) in a.iter().enumerate() {
-                let bi = b[i];
-                if *ai == R64::ZERO && bi != R64::ZERO {
-                    return Ordering::Greater;
-                } else if bi == R64::ZERO && *ai != R64::ZERO {
-                    return Ordering::Less;
-                }
-            }
-            Ordering::Equal
-        });
-    }
-
-    fn eliminate_below_leader(&mut self, row: usize) {
-        let Some(leader_col) = self.0[row].leader_col() else {
-            return;
-        };
-
-        for i in (row + 1)..self.0.len() {
-            self.eliminate(row, i, leader_col);
-        }
-    }
-
-    fn eliminate(&mut self, selected_row: usize, other_row: usize, leader_col: usize) {
-        if self.0[other_row][leader_col] == R64::ZERO {
-            return;
-        }
-
-        let factor = -self.0[other_row][leader_col] / self.0[selected_row][leader_col];
-        let term = self.0[selected_row].clone() * factor;
-        self.0[other_row].add_assign(&term).unwrap();
-    }
-
-    fn normalize(&mut self) {
-        self.0.iter_mut().for_each(|row| row.normalize());
-    }
-
-    fn eliminate_above_leader(&mut self, row: usize) {
-        let Some(leader_col) = self.0[row].leader_col() else {
-            return;
-        };
-
-        for i in 0..row {
-            self.eliminate(row, i, leader_col);
-        }
-    }
-
-    fn matrix_mul(&self, rhs: &Self) -> anyhow::Result<Self> {
-        if (self.0.is_empty() || self.0[0].is_empty()) && (rhs.0.is_empty() || rhs.0[0].len() == 1)
-        {
-            return Ok(Self(Vec::new()));
-        }
-
-        if self.0[0].len() != rhs.0.len() {
-            anyhow::bail!(
-                "multiplication of incompatible matrices: lhs width {} vs rhs height {}",
-                self.0[0].len(),
-                rhs.0.len()
-            );
-        }
-
-        let mut new = Self::zeros(self.0.len(), rhs.0[0].len());
-        for i in 0..rhs.0[0].len() {
-            for j in 0..self.0.len() {
-                for k in 0..self.0[0].len() {
-                    new.0[j][i] += self.0[j][k] * rhs.0[k][i];
-                }
-            }
-        }
-        Ok(new)
-    }
-
-    fn append_row(&mut self, r: RowVec) {
-        self.0.push(r);
-    }
-
-    fn remove_row(&mut self, i: usize) {
-        self.0.remove(i);
-    }
-
-    fn height(&self) -> usize {
-        self.0.len()
-    }
-
-    fn width(&self) -> usize {
-        if self.0.is_empty() {
-            0
-        } else {
-            self.0[0].len()
-        }
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &RowVec> {
-        self.0.iter()
-    }
-
-    fn get_column_copy(&self, c: usize) -> Self {
-        Self::new(self.iter().map(|r| vec![r[c]]).collect())
-    }
-}
-
-impl MulAssign<R64> for Matrix {
-    fn mul_assign(&mut self, rhs: R64) {
-        for row in &mut self.0 {
-            *row *= rhs;
-        }
-    }
-}
-
-impl Mul<R64> for Matrix {
-    type Output = Self;
-
-    fn mul(mut self, rhs: R64) -> Self::Output {
-        self *= rhs;
-        self
-    }
-}
-
-impl Index<usize> for Matrix {
-    type Output = RowVec;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
-    }
-}
-
-impl IndexMut<usize> for Matrix {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0[index]
-    }
-}
-
-impl Index<(usize, usize)> for Matrix {
-    type Output = R64;
-
-    fn index(&self, index: (usize, usize)) -> &Self::Output {
-        &self.0[index.0][index.1]
-    }
-}
-
-impl IndexMut<(usize, usize)> for Matrix {
-    fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
-        &mut self.0[index.0][index.1]
-    }
-}
-
-impl IntoIterator for Matrix {
-    type Item = RowVec;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl fmt::Display for Matrix {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "[ ")?;
-        let mut first = true;
-        for v in &self.0 {
-            if !first {
-                write!(f, "\n  ")?;
-            }
-            first = false;
-            write!(f, "{} ", *v)?;
-        }
-        write!(f, "]")?;
-        Ok(())
-    }
-}
-
 const VERBOSE: bool = false;
 
 // very slow...
@@ -573,7 +255,7 @@ fn part2<W: Write>(writer: &mut BufWriter<W>, machines: Vec<Machine>) {
         //   [ 0 0 0 0 0 1 0 ] ]
         for col in &iec {
             let width = mat.width();
-            mat.append_row(RowVec(vec![R64::ZERO; width]));
+            mat.append_row(RowVec::zeros(width));
             let row = mat.height() - 1;
             mat[(row, *col)] = R64::ONE;
         }
@@ -674,28 +356,24 @@ fn find_min_solution(
 
     // for that column, we need to iterate from 0 up to (and including) the magnitude of the
     // smallest joltage that this column (button) affects.
-    let mut max_req_button_presses = OptionMinMax(None);
+    let mut max_req_button_presses = OptionMinMax::NONE;
     for j in &buttons[leader_col] {
         max_req_button_presses = max_req_button_presses.min(joltage_reqs[*j]);
     }
-    let max_req_button_presses = max_req_button_presses.0.unwrap();
+    let max_req_button_presses = max_req_button_presses.unwrap();
 
     // iterate and recurse to "count" up all the possible solutions with these free variables, and
     // keep track of the minimum number of button presses per solution as we go.
-    let mut min = None;
+    let mut min = OptionMinMax::NONE;
     let mut mat = mat.clone();
     for i in 0..=max_req_button_presses {
         let width = mat.width() - 1;
         mat[(variable_row, width)] = R64::from_integer(i); // set the free variable to a sample value
         let m = find_min_solution(&mat, buttons, joltage_reqs, original_mat, free_vars - 1);
-
-        // TODO: make OptionMinMax able to handle this scenario more nicely
-        if min.is_none() || (m.is_some() && m.unwrap() < min.unwrap()) {
-            min = m;
-        }
+        min = min.min_option(m);
     }
 
-    min
+    min.get()
 }
 
 fn is_valid(m: &Matrix) -> bool {
@@ -726,7 +404,7 @@ fn is_real_solution(mat: &Matrix, original_mat: &Matrix, joltage_reqs: &[Joltage
     // extract the rightmost column of the solution into its own column-vector, then add an extra 0
     // entry at the bottom.
     let mut solution = mat.get_column_copy(mat.width() - 1);
-    solution.append_row(RowVec(vec![R64::ZERO]));
+    solution.append_row(RowVec::zeros(1));
 
     // we expect the result of matrix-multiplying the original matrix by the solution column-vector
     // to equal a column-vector of the joltage requirements. For example, for the original matrix
@@ -763,21 +441,4 @@ fn is_real_solution(mat: &Matrix, original_mat: &Matrix, joltage_reqs: &[Joltage
                 .map(|j| vec![R64::from_integer(*j)])
                 .collect(),
         )
-}
-
-// TODO: move to aoclib-rs
-fn fold_while<I, B, F>(it: I, init: B, mut f: F) -> B
-where
-    I: Iterator,
-    F: FnMut(B, I::Item) -> (B, bool),
-{
-    let mut b = init;
-    for v in it {
-        let (new_b, should_continue) = f(b, v);
-        b = new_b;
-        if !should_continue {
-            break;
-        }
-    }
-    b
 }
