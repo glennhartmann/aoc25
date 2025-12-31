@@ -4,29 +4,14 @@ use std::{
     io::{BufWriter, Write},
 };
 
-use aoclib_rs::{pairwise_iter, prep_io, printwriteln};
+use aoclib_rs::{
+    iter::pairwise_iter,
+    point::{PointDist, Point3d},
+    prep_io, printwriteln,
+};
 
-// TODO: refactor into aoclib-rs
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
-pub struct Point3d {
-    x: i64,
-    y: i64,
-    z: i64,
-}
-
-impl Point3d {
-    fn new(x: i64, y: i64, z: i64) -> Self {
-        Self { x, y, z }
-    }
-    fn dist(&self, other: &Self) -> f64 {
-        ((self.x as f64 - other.x as f64).powi(2)
-            + (self.y as f64 - other.y as f64).powi(2)
-            + (self.z as f64 - other.z as f64).powi(2))
-        .sqrt()
-    }
-}
-
-type Dist = (Point3d, Point3d, f64);
+type P3 = Point3d<i64>;
+type Dist = (P3, P3, f64);
 
 pub fn run() {
     let mut contents = String::new();
@@ -35,7 +20,7 @@ pub fn run() {
         .iter()
         .map(|p| {
             let mut p_split = p.split(",");
-            Point3d::new(
+            P3::new(
                 p_split.next().unwrap().parse().unwrap(),
                 p_split.next().unwrap().parse().unwrap(),
                 p_split.next().unwrap().parse().unwrap(),
@@ -45,9 +30,8 @@ pub fn run() {
 
     let mut dists: Vec<Dist> = Vec::new();
 
-    // TODO: slightly inefficient - makes copies of points instead of passing by ref
     for (p1, p2) in pairwise_iter(&points) {
-        dists.push((p1, p2, p1.dist(&p2)));
+        dists.push((p1.clone(), p2.clone(), p1.dist(p2)));
     }
     dists.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
 
@@ -55,7 +39,7 @@ pub fn run() {
     part2(&mut writer, &dists);
 }
 
-type Circuit = HashSet<Point3d>;
+type Circuit = HashSet<P3>;
 
 fn part1<W: Write>(writer: &mut BufWriter<W>, dists: &[Dist]) {
     let (circuits, _, _) = solve_for_n_pairs(dists, 1000);
@@ -69,19 +53,19 @@ fn part1<W: Write>(writer: &mut BufWriter<W>, dists: &[Dist]) {
     .unwrap();
 }
 
-type Solution = (Vec<Circuit>, Point3d, Point3d);
+type Solution = (Vec<Circuit>, P3, P3);
 
 fn solve_for_n_pairs(dists: &[Dist], n: usize) -> Solution {
-    let mut pushed: HashSet<Point3d> = HashSet::new();
+    let mut pushed: HashSet<P3> = HashSet::new();
     let mut circuits: Vec<Circuit> = Vec::new();
     for d in dists.iter().take(n) {
         if !pushed.contains(&d.0) {
-            circuits.push(HashSet::from([d.0]));
-            pushed.insert(d.0);
+            circuits.push(HashSet::from([d.0.clone()]));
+            pushed.insert(d.0.clone());
         }
         if !pushed.contains(&d.1) {
-            circuits.push(HashSet::from([d.1]));
-            pushed.insert(d.1);
+            circuits.push(HashSet::from([d.1.clone()]));
+            pushed.insert(d.1.clone());
         }
     }
 
@@ -98,10 +82,10 @@ fn solve_for_n_pairs(dists: &[Dist], n: usize) -> Solution {
 
     circuits.sort_by_key(|e| e.len());
 
-    (circuits, dists[i].0, dists[i].1)
+    (circuits, dists[i].0.clone(), dists[i].1.clone())
 }
 
-fn find_circuit_containing(circuits: &[Circuit], p: &Point3d) -> usize {
+fn find_circuit_containing(circuits: &[Circuit], p: &P3) -> usize {
     circuits.iter().position(|c| c.contains(p)).unwrap()
 }
 
@@ -122,5 +106,5 @@ fn part2<W: Write>(writer: &mut BufWriter<W>, dists: &[Dist]) {
         );
     }
 
-    printwriteln!(writer, "{}", p1.x * p2.x).unwrap();
+    printwriteln!(writer, "{}", p1.x() * p2.x()).unwrap();
 }
