@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2024"
 
 [dependencies]
-aoclib-rs = { git = "https://github.com/glennhartmann/aoclib-rs.git", tag = "v0.0.15" }
+aoclib-rs = { git = "https://github.com/glennhartmann/aoclib-rs.git", tag = "v0.0.16-e" }
 
 anyhow = "1.0.100"
 clap = { version = "4.5.51", features = ["derive"] }
