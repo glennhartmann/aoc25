@@ -78,7 +78,7 @@ fn generate_patterns(
     endi: i64,
     seen: &mut HashSet<String>,
 ) -> i64 {
-    if current.len() % divisor != 0 {
+    if !current.len().is_multiple_of(divisor) {
         return 0;
     }
     let part = current[..(current.len() / divisor)].to_string();
